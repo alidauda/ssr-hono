@@ -1,0 +1,21 @@
+{
+  "dependencies": {},
+  "name": "cape-monorepo",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev --parallel"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest",
+    "turbo": "^2.5.8"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "packageManager": "bun@1.2.0"
+}

@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     hono({
-      entry: "src/server.ts",
+      entry: "server.ts",
     }),
   ],
 });

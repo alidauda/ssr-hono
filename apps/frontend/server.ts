@@ -14,6 +14,7 @@ const ABORT_DELAY = 10000;
 const templateHtml = isProduction
   ? await Bun.file("./dist/client/index.html").text()
   : "";
+
 const app = new Hono<{ Bindings: HttpBindings }>();
 
 if (isProduction) {
@@ -28,7 +29,10 @@ app.use("*", async (c) => {
     let template: string;
     let render: typeof RenderType;
     const vite = c.get("vite");
-    if (!isProduction && vite) {
+    if (!isProduction) {
+      if (!vite) {
+        throw new Error("Vite dev server not found in context");
+      }
       template = await Bun.file("./index.html").text();
       template = await vite.transformIndexHtml(url, template);
       render = (await vite.ssrLoadModule("/src/entry-server.tsx")).render;

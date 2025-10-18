@@ -48,7 +48,7 @@ app.use("*", async (c) => {
       let didError = false;
       const { pipe, abort } = render(url, {
         onShellError() {
-          c.status(500);
+          c.status(didError ? 500 : 200);
           c.header("Content-Type", "text/html");
           c.html("<h1>Something went wrong</h1>");
         },

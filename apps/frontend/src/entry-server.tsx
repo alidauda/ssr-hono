@@ -1,9 +1,9 @@
-import { StrictMode } from 'react'
+import { StrictMode } from "react";
 import {
   type RenderToPipeableStreamOptions,
   renderToPipeableStream,
-} from 'react-dom/server'
-import App from './App'
+} from "react-dom/server";
+import { ServerRouter } from "react-router";
 
 /*
   React SSR streaming with Suspense works by adding JS code to the end of the
@@ -27,9 +27,10 @@ import App from './App'
 export function render(_url: string, options?: RenderToPipeableStreamOptions) {
   return renderToPipeableStream(
     <StrictMode>
-      <App />
+      <ServerRouter url={_url} />
+      //i need to find a way to pass the context here
       <vite-streaming-end></vite-streaming-end>
     </StrictMode>,
-    options,
-  )
+    options
+  );
 }

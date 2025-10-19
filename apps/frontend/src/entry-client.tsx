@@ -1,11 +1,12 @@
 import { StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import "./index.css";
-import App from "./App.tsx";
 
+import { RouterProvider } from "react-router/dom";
+import { router } from "./App";
 hydrateRoot(
   document.getElementById("root") as HTMLElement,
   <StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </StrictMode>
 );

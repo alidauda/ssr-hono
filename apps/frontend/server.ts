@@ -7,72 +7,106 @@ import type { ViteDevServer } from "vite";
 import { stream } from "hono/streaming";
 import { Transform, Readable } from "stream";
 import { serve } from "@hono/node-server";
+
 const isProduction = process.env.NODE_ENV === "production";
 const port = process.env.PORT || 5173;
 const base = process.env.BASE || "/";
 const ABORT_DELAY = 10000;
-const templateHtml = isProduction
-  ? await Bun.file("./dist/client/index.html").text()
-  : "";
+
+let vite: ViteDevServer | undefined;
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
-if (isProduction) {
+if (!isProduction) {
+  const { createServer } = await import("vite");
+  vite = await createServer({
+    server: { middlewareMode: true },
+    appType: "custom",
+    base,
+  });
+} else {
   app.use(compress());
   app.use(base, serveStatic({ root: "./dist/client" }));
 }
 
+if (!isProduction && vite) {
+  app.use("*", async (c, next) => {
+    const url = new URL(c.req.url);
+
+    if (
+      url.pathname.startsWith("/src/") ||
+      url.pathname.startsWith("/@") ||
+      url.pathname.includes(".")
+    ) {
+      return new Promise((resolve) => {
+        vite!.middlewares(c.env.incoming, c.env.outgoing, () => {
+          resolve(next());
+        });
+      });
+    }
+
+    return next();
+  });
+}
+
 app.use("*", async (c) => {
   try {
-    const url = c.req.url.replace(base, "");
+    const url = c.req.url;
 
     let template: string;
     let render: typeof RenderType;
-    const vite = c.get("vite");
-    if (!isProduction) {
-      if (!vite) {
-        throw new Error("Vite dev server not found in context");
-      }
+
+    if (!isProduction && vite) {
       template = await Bun.file("./index.html").text();
       template = await vite.transformIndexHtml(url, template);
       render = (await vite.ssrLoadModule("/src/entry-server.tsx")).render;
     } else {
+      const templateHtml = await Bun.file("./dist/client/index.html").text();
       template = templateHtml;
       render = (await import("./dist/server/entry-server.js")).render;
     }
 
     const [htmlStart, htmlEnd] = template.split(`<!--app-html-->`);
+
+    c.header("Content-Type", "text/html");
+
     return stream(c, async (stream) => {
-      const res = c.env.outgoing;
       await stream.write(htmlStart!);
       let didError = false;
+
       const { pipe, abort } = render(url, {
         onShellError() {
-          c.status(didError ? 500 : 200);
-          c.header("Content-Type", "text/html");
-          c.html("<h1>Something went wrong</h1>");
+          didError = true;
+          console.error("Shell error occurred");
         },
         onShellReady() {
-          res.statusCode = didError ? 500 : 200;
-          res.setHeader("Content-Type", "text/html");
-          res.setHeader("Transfer-Encoding", "chunked");
+          console.log("Shell ready - streaming started");
         },
-        onError() {
+        onError(error) {
           didError = true;
+          console.error("SSR Error:", error);
         },
       });
+
       const timeout = setTimeout(() => abort(), ABORT_DELAY);
+
+      let streamEnded = false;
       const nodeTransform = new Transform({
         transform(chunk, encoding, callback) {
+          if (streamEnded) {
+            callback();
+            return;
+          }
+
           const chunkStr = chunk.toString();
+
           if (chunkStr.includes("<vite-streaming-end>")) {
+            streamEnded = true;
             const finalChunk = chunkStr.replace(
               "<vite-streaming-end></vite-streaming-end>",
               ""
             );
-
             this.push(finalChunk + htmlEnd);
-
             this.push(null);
             clearTimeout(timeout);
           } else {
@@ -81,23 +115,24 @@ app.use("*", async (c) => {
           callback();
         },
       });
+
       pipe(nodeTransform);
-
       const webReadable = Readable.toWeb(nodeTransform);
-
       await stream.pipe(webReadable);
     });
   } catch (e) {
-    const vite = !isProduction ? c.get("vite") : null;
     if (!isProduction && vite) {
       vite.ssrFixStacktrace(e as Error);
     }
-    console.log("NODE_ENV =", process.env.NODE_ENV);
     console.error("SSR Error:", e);
     return c.text("Server Error", 500);
   }
 });
-export default {
-  port,
-  fetch: app.fetch,
-};
+
+if (import.meta.main) {
+  console.log(`Server is running on port ${port}`);
+  serve({
+    fetch: app.fetch,
+    port: Number(port),
+  });
+}
